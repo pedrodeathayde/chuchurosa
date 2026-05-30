@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acervo Chuchu Rosa</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --rosa: #F2A7B8; --rosa-escuro: #C96F86; --rosa-claro: #FDF0F4;
+    --verde: #8DB87A; --creme: #FBF7F2; --marrom: #6B4F3A;
+    --cinza: #8A8A8A; --borda: #E8DDD5; --texto: #3A2E27;
+    --display: "Playfair Display", Georgia, serif;
+    --body: "DM Sans", sans-serif;
+  }
+  body { font-family: var(--body); background: var(--creme); color: var(--texto); min-height: 100vh; }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: #333; color: white;
+    padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 999;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  /* LOADING */
+  .loading-screen { position: fixed; inset: 0; background: var(--creme);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 500; gap: 1rem; }
+  .loading-screen .logo { font-family: var(--display); font-size: 2rem; color: var(--rosa-escuro); font-style: italic; }
+  .spinner { width: 32px; height: 32px; border: 3px solid var(--borda);
+    border-top-color: var(--rosa-escuro); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* HEADER */
+  header { background: white; border-bottom: 1px solid var(--borda); padding: 0 2rem;
+    position: sticky; top: 0; z-index: 100; display: flex; align-items: center;
+    gap: 2rem; height: 64px; }
+  .logo { font-family: var(--display); font-size: 1.3rem; color: var(--rosa-escuro);
+    white-space: nowrap; font-style: italic; }
+  .logo span { font-style: normal; font-weight: 600; }
+  .search-bar { flex: 1; max-width: 420px; position: relative; }
+  .search-bar input { width: 100%; padding: 8px 16px 8px 38px; border: 1px solid var(--borda);
+    border-radius: 99px; font-family: var(--body); font-size: 14px; background: var(--creme);
+    outline: none; color: var(--texto); transition: border-color 0.2s; }
+  .search-bar input:focus { border-color: var(--rosa); }
+  .search-bar svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: var(--cinza); pointer-events: none; }
+  .header-count { font-size: 13px; color: var(--cinza); white-space: nowrap; }
+  .btn-add { margin-left: auto; background: var(--rosa-escuro); color: white; border: none;
+    border-radius: 99px; padding: 8px 20px; font-family: var(--body); font-size: 14px;
+    font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
+  .btn-add:hover { background: #b55e74; }
+
+  /* LAYOUT */
+  .layout { display: flex; min-height: calc(100vh - 64px); }
+
+  /* SIDEBAR */
+  aside { width: 220px; min-width: 220px; background: white; border-right: 1px solid var(--borda);
+    padding: 1.5rem 0; position: sticky; top: 64px; height: calc(100vh - 64px); overflow-y: auto; }
+  .sidebar-title { font-size: 11px; font-weight: 500; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--cinza); padding: 0 1.25rem 0.75rem; }
+  .collection-btn { display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 9px 1.25rem; border: none; background: none; font-family: var(--body);
+    font-size: 14px; color: var(--texto); cursor: pointer; text-align: left; transition: background 0.15s; }
+  .collection-btn:hover { background: var(--creme); }
+  .collection-btn.active { background: var(--rosa-claro); color: var(--rosa-escuro); font-weight: 500; }
+  .collection-btn .icon { font-size: 18px; width: 22px; text-align: center; }
+  .collection-btn .badge { margin-left: auto; background: var(--borda); color: var(--cinza);
+    font-size: 11px; padding: 1px 7px; border-radius: 99px; min-width: 22px; text-align: center; }
+  .collection-btn.active .badge { background: #f5c5d1; color: var(--rosa-escuro); }
+  .sidebar-sep { height: 1px; background: var(--borda); margin: 0.75rem 1.25rem; }
+
+  /* MAIN */
+  main { flex: 1; padding: 2rem; }
+  .section-header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.5rem; }
+  .section-title { font-family: var(--display); font-size: 1.6rem; color: var(--texto); }
+  .section-sub { font-size: 13px; color: var(--cinza); }
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 1.25rem; }
+  .sort-label { font-size: 13px; color: var(--cinza); }
+  .sort-select { font-family: var(--body); font-size: 13px; border: 1px solid var(--borda);
+    border-radius: 6px; padding: 5px 10px; background: white; color: var(--texto); cursor: pointer; outline: none; }
+
+  /* GRID */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 1.25rem; }
+
+  /* CARD */
+  .card { background: white; border: 1px solid var(--borda); border-radius: 12px;
+    overflow: hidden; cursor: pointer; transition: transform 0.18s, box-shadow 0.18s; }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+  .card-img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--creme); }
+  .card-no-img { width: 100%; aspect-ratio: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; background: var(--rosa-claro);
+    color: var(--rosa); font-size: 2.5rem; gap: 8px; }
+  .card-no-img span { font-size: 12px; color: var(--rosa-escuro); opacity: 0.7; font-family: var(--body); }
+  .card-body { padding: 10px 12px 12px; }
+  .card-name { font-size: 13px; font-weight: 500; color: var(--texto); line-height: 1.3; margin-bottom: 4px; }
+  .card-price { font-size: 13px; color: var(--rosa-escuro); font-weight: 500; }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .tag { font-size: 10px; padding: 2px 7px; border-radius: 99px; background: var(--rosa-claro); color: var(--rosa-escuro); }
+
+  /* EMPTY */
+  .empty { text-align: center; padding: 4rem 2rem; color: var(--cinza); }
+  .empty .big { font-size: 3rem; margin-bottom: 1rem; }
+
+  /* MODAL */
+  .overlay { display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(58,46,39,0.45); align-items: center; justify-content: center; }
+  .overlay.open { display: flex; }
+  .modal { background: white; border-radius: 16px; width: 90%; max-width: 520px;
+    max-height: 90vh; overflow-y: auto; padding: 2rem; position: relative; }
+  .modal-close { position: absolute; top: 1rem; right: 1rem; background: none;
+    border: none; font-size: 22px; cursor: pointer; color: var(--cinza); line-height: 1; }
+  .modal h2 { font-family: var(--display); font-size: 1.3rem; margin-bottom: 1.25rem; }
+  .form-group { margin-bottom: 1rem; }
+  .form-group label { display: block; font-size: 13px; font-weight: 500; color: var(--cinza); margin-bottom: 5px; }
+  .form-group input, .form-group select {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--borda); border-radius: 8px;
+    font-family: var(--body); font-size: 14px; color: var(--texto); background: white;
+    outline: none; transition: border-color 0.2s; }
+  .form-group input:focus { border-color: var(--rosa); }
+  .coll-checkboxes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .coll-check { display: flex; align-items: center; gap: 5px; background: var(--creme);
+    border: 1px solid var(--borda); border-radius: 99px; padding: 4px 12px;
+    font-size: 13px; cursor: pointer; user-select: none; transition: all 0.15s; }
+  .coll-check input { display: none; }
+  .coll-check.checked { background: var(--rosa-claro); border-color: var(--rosa); color: var(--rosa-escuro); }
+  .btn-row { display: flex; gap: 10px; margin-top: 1.5rem; justify-content: flex-end; }
+  .btn-secondary { padding: 9px 20px; border: 1px solid var(--borda); border-radius: 8px;
+    background: white; font-family: var(--body); font-size: 14px; cursor: pointer; color: var(--texto); }
+  .btn-primary { padding: 9px 20px; background: var(--rosa-escuro); border: none;
+    border-radius: 8px; color: white; font-family: var(--body); font-size: 14px;
+    font-weight: 500; cursor: pointer; }
+  .btn-primary:hover { background: #b55e74; }
+  .btn-danger { padding: 9px 20px; background: #fee2e2; border: none; border-radius: 8px;
+    color: #b91c1c; font-family: var(--body); font-size: 14px; cursor: pointer; margin-right: auto; }
+
+  /* DETAIL */
+  .detail-img { width: 100%; border-radius: 10px; object-fit: cover; max-height: 320px;
+    display: block; margin-bottom: 0.75rem; background: var(--creme); }
+  .detail-no-img { width: 100%; height: 160px; border-radius: 10px; background: var(--rosa-claro);
+    display: flex; align-items: center; justify-content: center; font-size: 3.5rem; margin-bottom: 1rem; }
+  .detail-name { font-family: var(--display); font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .detail-price { font-size: 1.1rem; color: var(--rosa-escuro); font-weight: 500; margin-bottom: 1rem; }
+  .detail-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 1.25rem; }
+  .detail-tags .tag { font-size: 12px; padding: 4px 12px; }
+
+  /* GALLERY */
+  .gallery-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 1rem; justify-content: center; }
+  .gallery-nav button { background: white; border: 1px solid var(--borda); border-radius: 6px;
+    padding: 4px 12px; font-size: 18px; cursor: pointer; transition: border-color 0.15s; }
+  .gallery-nav button:hover:not(:disabled) { border-color: var(--rosa); }
+  .gallery-nav button:disabled { opacity: 0.3; cursor: default; }
+  .gallery-nav span { font-size: 13px; color: var(--cinza); min-width: 40px; text-align: center; }
+  .btn-del-photo { margin-left: auto; background: #fee2e2; border: none; border-radius: 6px;
+    padding: 4px 10px; font-size: 12px; color: #b91c1c; cursor: pointer; font-family: var(--body); }
+
+  /* UPLOAD ZONE */
+  .upload-zone { border: 2px dashed var(--borda); border-radius: 10px; padding: 1.25rem;
+    text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-bottom: 1rem; }
+  .upload-zone:hover { border-color: var(--rosa); background: var(--rosa-claro); }
+  .upload-zone.dragover { border-color: var(--rosa-escuro); background: var(--rosa-claro); }
+  .upload-zone .icon { font-size: 1.8rem; }
+  .upload-zone p { font-size: 13px; color: var(--cinza); margin-top: 4px; }
+  .upload-progress { margin-top: 8px; font-size: 12px; color: var(--rosa-escuro); display: none; }
+
+  @media (max-width: 700px) {
+    aside { display: none; }
+    .grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+    main { padding: 1rem; }
+    header { padding: 0 1rem; gap: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-screen" id="loadingScreen">
+  <div class="logo">Chuchu <span>Rosa</span></div>
+  <div class="spinner"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<header>
+  <div class="logo">Chuchu <span>Rosa</span></div>
+  <div class="search-bar">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="text" id="searchInput" placeholder="Buscar produto..." oninput="applyFilters()">
+  </div>
+  <span class="header-count" id="headerCount"></span>
+  <button class="btn-add" onclick="openAddModal()">+ Novo produto</button>
+</header>
+
+<div class="layout">
+  <aside id="sidebar"></aside>
+  <main>
+    <div class="section-header">
+      <h1 class="section-title" id="sectionTitle">Todos os produtos</h1>
+      <span class="section-sub" id="sectionSub"></span>
+    </div>
+    <div class="toolbar">
+      <span class="sort-label">Ordenar:</span>
+      <select class="sort-select" id="sortSelect" onchange="applyFilters()">
+        <option value="az">Nome A–Z</option>
+        <option value="za">Nome Z–A</option>
+        <option value="asc">Menor preço</option>
+        <option value="desc">Maior preço</option>
+        <option value="foto">Com foto primeiro</option>
+      </select>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="emptyState" style="display:none">
+      <div class="big">🌸</div><p>Nenhum produto encontrado.</p>
+    </div>
+  </main>
+</div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="overlay" id="addModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAddModal()">×</button>
+    <h2 id="modalTitle">Novo produto</h2>
+    <div class="form-group">
+      <label>Nome do produto</label>
+      <input type="text" id="fName" placeholder="Ex: Fantasia de Unicórnio">
+    </div>
+    <div class="form-group">
+      <label>Preço (R$)</label>
+      <input type="number" id="fPrice" step="0.01" placeholder="0,00">
+    </div>
+    <div class="form-group">
+      <label>Coleções</label>
+      <div class="coll-checkboxes" id="collCheckboxes"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-danger" id="btnDelete" onclick="deleteProduct()" style="display:none">Excluir</button>
+      <button class="btn-secondary" onclick="closeAddModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveProduct()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="overlay" id="detailModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeDetail()">×</button>
+    <div id="detailImg"></div>
+    <div class="detail-name" id="detailName"></div>
+    <div class="detail-price" id="detailPrice"></div>
+    <div class="detail-tags" id="detailTags"></div>
+    <div class="upload-zone" id="uploadZone"
+         onclick="document.getElementById('detailUpload').click()"
+         ondragover="event.preventDefault();this.classList.add('dragover')"
+         ondragleave="this.classList.remove('dragover')"
+         ondrop="handleDrop(event)">
+      <div class="icon">📷</div>
+      <p>Clique ou arraste fotos aqui (várias de uma vez)</p>
+    </div>
+    <div class="upload-progress" id="uploadProgress"></div>
+    <input type="file" id="detailUpload" accept="image/*" multiple style="display:none" onchange="uploadPhotos(this.files)">
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="openEditFromDetail()">✏️ Editar</button>
+      <button class="btn-primary" onclick="closeDetail()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://oznpfqsgurztffwfyfec.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96bnBmcXNndXJ6dGZmd2Z5ZmVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxMjAyNjEsImV4cCI6MjA5NTY5NjI2MX0.wO7vQ3cDy9bRX6mifvgp4B_cNjVhY_YLq4qkLvwigQA';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const COLLECTIONS = [
+  { id: "passaros",      label: "Pássaros",           icon: "🦜" },
+  { id: "flores",        label: "Flores",              icon: "🌸" },
+  { id: "raposas",       label: "Raposas",             icon: "🦊" },
+  { id: "decoracao",     label: "Decoração",           icon: "🌿" },
+  { id: "almofadas",     label: "Almofadas",           icon: "💛" },
+  { id: "bebes",         label: "Para bebês",          icon: "🍼" },
+  { id: "asas",          label: "Asas",                icon: "🪽" },
+  { id: "natal",         label: "Natal",               icon: "🎄" },
+  { id: "fantasias",     label: "Fantasias",           icon: "🎭" },
+  { id: "acessorios",    label: "Tiaras & acessórios", icon: "👑" },
+  { id: "plush",         label: "Plush & pelúcia",     icon: "🧸" },
+  { id: "educativo",     label: "Educativo",           icon: "🎓" },
+  { id: "lembrancinhas", label: "Lembrancinhas",       icon: "🎁" },
+  { id: "bolsas",        label: "Bolsas & mochilas",   icon: "👜" },
+];
+
+const RAW = [["Fantasia Cavalo Marinho", 129.9, ["passaros", "fantasias"]], ["Naninha Nuvem", 108, ["bebes", "decoracao"]], ["Naninha de Sol", 108, ["bebes", "decoracao"]], ["Máscara de Sol", 39, ["fantasias", "acessorios"]], ["Fantasia de Pombo", 129.9, ["passaros", "fantasias"]], ["Fantasia Caracol", 189, ["fantasias"]], ["Fantasia Pavão", 120, ["passaros", "fantasias"]], ["Máscara Panda", 29.9, ["fantasias", "acessorios"]], ["Touca e Rabo de Golfinho", 149.9, ["fantasias"]], ["Fantasia de Cachorro", 108, ["fantasias"]], ["Touca de Pinguim", 89.9, ["fantasias"]], ["Saia de Tule", 89.9, ["fantasias"]], ["Par de Luvas de Bichinhos", 45, ["acessorios"]], ["Olhos de Sapo", 59.9, ["acessorios"]], ["Rabo de Raposa", 59.9, ["raposas", "acessorios"]], ["Fantasia de Corvo", 129, ["passaros", "fantasias"]], ["Tiara e Máscara de Raposa", 59.9, ["raposas", "fantasias", "acessorios"]], ["Presilha Orelhas Stitch", 29.9, ["fantasias", "acessorios"]], ["Tiara Galinha", 44.9, ["passaros", "acessorios"]], ["Fantasia de Ema", 129, ["passaros", "fantasias"]], ["Fantasia de Calopsita", 129, ["passaros", "fantasias"]], ["Fantasia de Papagaio", 129, ["passaros", "fantasias"]], ["Touca Anteninhas", 59.9, ["fantasias"]], ["Acessórios Coelho Azul", 59.9, ["fantasias"]], ["Tiara Orelhas de Coelhinho Azul com Rabinho e Gravata", 44.9, ["fantasias", "acessorios"]], ["Fantasia de Bem-te-vi", 129, ["passaros", "fantasias"]], ["Máscara de Leão", 39.9, ["fantasias", "acessorios"]], ["Asa e Máscara Coruja Edwiges Harry Potter", 129, ["passaros", "asas", "fantasias"]], ["Asa e Touca Arara Iago Aladdin", 129, ["passaros", "asas", "fantasias"]], ["Máscara Floco de Neve", 29.9, ["fantasias", "acessorios"]], ["Touca e Luvas de Gorila", 79.9, ["fantasias"]], ["Fantasia de Sushi Adulto", 169.9, ["fantasias"]], ["Presilhas Orelhas de Urso", 59.9, ["fantasias", "acessorios"]], ["Fantasia Coruja Sábia", 129, ["passaros", "fantasias"]], ["Fantasia Formiga Azul Bob Zoom", 108, ["fantasias"]], ["Capa com Capuz de Tucano", 229, ["passaros", "fantasias"]], ["Asa de Dragão", 89, ["asas", "fantasias"]], ["Tiara Anteninhas", 39, ["fantasias", "acessorios"]], ["Fantasia de Girassol", 189.9, ["flores", "fantasias"]], ["Bandeirola Trevos", 64.9, ["decoracao"]], ["Máscara de Girafa", 34.9, ["fantasias", "acessorios"]], ["Fantasia de Pintinho Amarelinho", 129, ["passaros", "fantasias"]], ["Tiara Frida", 69.9, ["flores", "acessorios"]], ["Fantasia de Bicho Preguiça", 108, ["fantasias"]], ["Fantasia de Peixe Nemo", 189, ["fantasias"]], ["Fantasia de Arara Azul Jade Rio", 129, ["passaros", "fantasias"]], ["Fantasia de Tatu", 169, ["fantasias"]], ["Árvore de Natal Montessori", 249, ["natal", "decoracao", "educativo"]], ["Limão Limãozinho Montessori", 64.9, ["bebes", "educativo"]], ["Touca de Flamingo", 89.9, ["passaros", "fantasias"]], ["Chocalho Cachorro", 79, ["bebes"]], ["Naninha de Elefante", 108, ["bebes"]], ["Chocalho de Ovelha", 79, ["bebes"]], ["Orelhas de Panda", 29.9, ["fantasias", "acessorios"]], ["Laranja Laranjinha Montessori", 64.9, ["bebes", "educativo"]], ["Naninha de Ratinho", 108, ["bebes"]], ["Pulseira Chocalho Panda", 59.9, ["bebes"]], ["Chocalho de Guaxinim", 79, ["bebes"]], ["Tapete Sensorial Abelha", 79.9, ["bebes", "decoracao"]], ["Móbile Safari", 189, ["bebes", "decoracao"]], ["Máscara de proteção Infantil Bichinhos", 14.4, ["bebes"]], ["Máscara de proteção Urso Infantil com orelhinhas", 27.7, ["bebes", "acessorios"]], ["Máscara de proteção do Pikachu Infantil", 14.4, ["bebes"]], ["Máscara de proteção Raposa Infantil com orelhinhas", 27.7, ["raposas", "bebes", "acessorios"]], ["Máscara de proteção Infantil", 12.1, ["bebes"]], ["Chocalho de Coelho", 79, ["bebes"]], ["Protetor de Berço Peças de Quebra-cabeça", 24.9, ["bebes", "decoracao", "educativo"]], ["Chocalho de Panda", 79, ["bebes"]], ["Fantasia de Sapo com Saia de Tule", 189.9, ["fantasias"]], ["Fantasia de Sapo", 89.9, ["fantasias"]], ["Tiara de Sapo", 49.9, ["acessorios"]], ["Fantasia de Beija-flor", 129, ["passaros", "fantasias"]], ["Fantasia de Burrinho", 129.8, ["fantasias"]], ["Fantasia de Lobo", 129, ["fantasias"]], ["Fantasia de Porquinho", 89.9, ["fantasias"]], ["Fantasia de Polvo", 189, ["fantasias"]], ["Fantasia de Elefante", 69.9, ["fantasias"]], ["Boneca Flor", 349, ["flores", "decoracao"]], ["Tiara de Flamingo", 44.9, ["passaros", "acessorios"]], ["Bandeirola de Flamingos", 64.9, ["passaros", "decoracao"]], ["Almofada de Amamentação de Flamingo", 149, ["almofadas", "passaros", "bebes"]], ["Almofada de Amamentação de Unicórnio", 149, ["almofadas", "bebes"]], ["Fantoche de Raposa", 69.9, ["raposas", "plush"]], ["Boneca Alice no País das Maravilhas", 449, ["fantasias", "decoracao"]], ["Naninha de Leão", 108, ["bebes"]], ["Rabo de Dinossauro para Cadeira", 89.9, ["decoracao", "acessorios"]], ["Lápis temáticos", 9.9, ["lembrancinhas"]], ["Marcador de Livro de Raposa", 14.9, ["raposas", "lembrancinhas"]], ["Lembrancinhas de Concha", 24.9, ["decoracao", "lembrancinhas"]], ["Almofada Cogumelo", 139.9, ["almofadas", "decoracao"]], ["Orelhinhas de Urso", 29, ["acessorios"]], ["Orelhinhas de Raposa", 29.9, ["raposas", "acessorios"]], ["Fantasia de Raposa com Luvas", 128, ["raposas", "fantasias"]], ["Rabos de dinossauros para lembrancinha", 39.9, ["acessorios", "lembrancinhas"]], ["Raposa em plush", 99, ["raposas", "decoracao", "plush"]], ["Chocalho Raposa", 79, ["raposas", "bebes"]], ["Rede para Bebês", 169.9, ["bebes"]], ["Máscara da Mônica e Sansão", 109.9, ["fantasias", "acessorios"]], ["Capa de Unicórnio com Capuz", 189, ["fantasias"]], ["Máscara de Lobo Mau", 39, ["fantasias", "acessorios"]], ["Fantasia Sebastian Caranguejo Pequena Sereia", 189, ["fantasias"]], ["Polvo em plush", 89, ["decoracao", "plush"]], ["Tiara de Coelho Floral", 69, ["flores", "acessorios"]], ["Tiara de Coelho com Luvas e Rabinho", 149.9, ["fantasias", "acessorios"]], ["Golfinho em plush", 89.9, ["decoracao", "plush"]], ["Capa com Capuz", 209, ["fantasias"]], ["Baleia em plush", 89, ["decoracao", "plush"]], ["Orelhas de Coelho com rabinho", 49, ["acessorios"]], ["Fantasia de Pikachu", 69, ["fantasias"]], ["Máscara de Coelho", 29, ["fantasias", "acessorios"]], ["Máscara De Borboleta", 35, ["fantasias", "acessorios"]], ["Flamingo", 79, ["passaros", "decoracao"]], ["Abacaxi decorativo", 69, ["decoracao", "lembrancinhas"]], ["Fantasia de Tartaruga", 159, ["fantasias"]], ["Touca e Rabo do Rei Leão", 99, ["fantasias"]], ["Mochila Panda", 59.9, ["bolsas"]], ["Tiara de Sushi", 49, ["acessorios"]], ["Fantasia de Dinossauro", 129, ["fantasias"]], ["Touca de Sorvete", 89, ["fantasias"]], ["Touca de Flor", 89, ["flores", "fantasias"]], ["Touca de Tubarão", 69, ["fantasias"]], ["Fantasia de Tubarão", 169, ["fantasias"]], ["Fantasia de Unicórnio", 129, ["fantasias"]], ["Fantasia de Flamingo", 129, ["passaros", "fantasias"]], ["Fantasia de Flor", 189, ["flores", "fantasias"]], ["Fantasia de Abelha", 189, ["fantasias"]], ["Fantasia de Astronauta", 189, ["fantasias"]], ["Fantasia de Sorvete", 189.9, ["fantasias"]], ["Fantasia de Morango", 209, ["flores", "fantasias"]], ["Capa de Flamingo", 129, ["passaros", "fantasias"]], ["Árvore de Natal Montessori", 99, ["natal", "decoracao", "educativo"]], ["Fantasia de Coruja com Saia de Tule", 159, ["passaros", "fantasias"]], ["Almofada de Pikachu", 149, ["almofadas"]], ["Fantasia de Abacaxi", 169, ["fantasias"]], ["Fantasia de Papagaio de Pirata", 149, ["passaros", "fantasias"]], ["Fantasia de Tuiuiú", 129, ["passaros", "fantasias"]], ["Orelhas de Unicórnio", 69.9, ["acessorios"]], ["Fantasia de Linguado Pequena Sereia", 189, ["fantasias"]], ["Naninha Fundo-do-mar", 108, ["bebes"]], ["Fantasia de Raposa com Tiara e Saia", 199, ["raposas", "fantasias"]], ["Almofada de Guaxinim", 119, ["almofadas"]], ["Fantasia de Arara Azul", 129, ["passaros", "fantasias"]], ["Lembrancinhas de Flamingo", 8, ["passaros", "decoracao", "lembrancinhas"]], ["Coroa e Capa Príncipe", 129, ["fantasias", "acessorios"]], ["Fantasia de Galinha", 129.9, ["passaros", "fantasias"]], ["Kit Piquenique Montessori", 289, ["bebes", "educativo"]], ["Lembrancinha Nuvem Feliz", 8, ["decoracao", "lembrancinhas"]], ["Chocalho de Flamingo", 79, ["passaros", "bebes"]], ["Chocalho de Unicórnio", 79, ["bebes"]], ["Almofada Prancha de Surf", 99, ["almofadas"]], ["Cisne Branco", 108, ["passaros", "decoracao"]], ["Maçã Montessori", 59.9, ["bebes", "educativo"]], ["Lembrancinha de Cisne", 17.7, ["passaros", "decoracao", "lembrancinhas"]], ["Móbile Flamingo", 269, ["passaros", "bebes", "decoracao"]], ["Fantasia de Tubarão", 108, ["fantasias"]], ["Móbile Balões e Nuvens", 189, ["bebes", "decoracao"]], ["Cubo com Número", 13.9, ["bebes", "educativo"]], ["Bolsa ou Mochila de Morango", 69.9, ["flores", "bolsas"]], ["Três porquinhos em plush", 169, ["decoracao", "plush"]], ["Fantasia de Porquinho", 169, ["fantasias"]], ["Fantasia de Lobo", 140.1, ["fantasias"]], ["Fantasia de Gatinho", 189, ["fantasias"]], ["Fantasia de Peixe", 189, ["fantasias"]], ["Saco Organizador de Brinquedos", 79.9, ["bebes", "educativo"]], ["Almofada de Amamentação Raposa", 149, ["raposas", "almofadas", "bebes"]], ["Tapete Educativo Floresta", 129.9, ["bebes", "decoracao", "educativo"]], ["Kit Fundo do Mar com 5 peças", 289, ["bebes", "decoracao"]], ["Fantasia de Javali", 149, ["fantasias"]], ["Tapete Minecraft", 69, ["educativo"]], ["Fantasia de Caveira Mexicana", 69.9, ["fantasias"]], ["Touca de Raposa", 50, ["raposas", "fantasias"]], ["Fantasia de Raposa com Touca", 108, ["raposas", "fantasias"]], ["Bandeirola Gotas de amor", 89.9, ["decoracao"]], ["Painel Educativo Corpo Humano", 269, ["bebes", "educativo"]], ["Painel Educativo Esqueleto", 269, ["bebes", "educativo"]], ["Kit berço Fundo-do-mar", 269, ["bebes", "decoracao"]], ["Kit Bebê Flamingo", 269, ["passaros", "bebes", "decoracao"]], ["Kit Bebê Unicórnio", 269, ["bebes", "decoracao"]], ["Almofada Concha", 129, ["almofadas", "decoracao"]], ["Kit Almofadas Doces", 219, ["almofadas"]], ["Almofada Picolé", 109, ["almofadas"]], ["Fantasia de Coelho com Patinhas", 79.9, ["fantasias"]], ["Fantasia de Dragão com touca", 169, ["fantasias"]], ["Naninha de Unicórnio", 108, ["bebes"]], ["Naninha de Flamingo", 108, ["passaros", "bebes"]], ["Fantasia Asa de Unicórnio Colorida com Tiara", 129, ["asas", "fantasias"]], ["Toalha de Raposa Infantil", 129.9, ["raposas", "bebes", "bolsas"]], ["Toalha de Sapo Infantil", 129.9, ["bebes", "bolsas"]], ["Fantasia de Sereia", 129, ["fantasias"]], ["Kit Bebê Panda", 219, ["bebes", "decoracao"]], ["Coroa de Sereia em feltro", 34.9, ["fantasias", "acessorios"]], ["Flamingo Pequeno", 27.9, ["passaros", "decoracao"]], ["Tiara de Unicórnio com Flores Artificiais", 79.9, ["flores", "acessorios"]], ["Fantasia do Snoopy", 110, ["fantasias"]], ["Tiara de Rena", 44.9, ["natal", "acessorios"]], ["Fantasia de Burrinho", 119.9, ["fantasias"]], ["Fantasia de vaca", 169, ["fantasias"]], ["Fantasia de ovelha", 249, ["fantasias"]], ["Fantasia de Arara", 269, ["passaros", "fantasias"]], ["Fantasia de Centopeia", 189, ["fantasias"]], ["Fantasia de Grilo - Asa e Touca", 139, ["asas", "fantasias"]], ["Cubo com letra", 13.9, ["bebes", "educativo"]], ["Fantasia de Pavão com Asas", 189, ["passaros", "asas", "fantasias"]], ["Naninha de Ratinho", 108, ["bebes"]], ["Fantasia de onça com patinhas", 79.9, ["fantasias"]], ["Fantasia de Gato Preto Halloween", 108, ["fantasias"]], ["Fantasia de Morcego Halloween", 129.9, ["fantasias"]], ["Fantasia de caveira mexicana Halloween", 44.9, ["fantasias"]], ["Máscaras Halloween Noivos Caveiras", 44.9, ["fantasias", "acessorios"]], ["Pirâmide Sensorial", 49, ["bebes", "educativo"]], ["Flamingo em Plush", 119, ["passaros", "decoracao", "plush"]], ["Cabeça de Flamingo", 89, ["passaros", "decoracao"]], ["Unicórnio", 99, ["decoracao"]], ["Fantasia Gato da Alice com Tiara", 189, ["fantasias"]], ["Fantasia Gato da Alice com Tule", 189, ["fantasias"]], ["Fantasia Gato da Alice", 139, ["fantasias"]], ["Fantasia de Lagarta da Alice", 220, ["fantasias"]], ["Chocalho Bichinhos Argola", 79, ["bebes"]], ["Almofada Temaki", 99, ["almofadas"]], ["Almofada Sushi de Salmão", 159, ["almofadas"]], ["Almofada Biscoito da Sorte", 99, ["almofadas"]], ["Almofada de Sushi Hossomaki", 99, ["almofadas"]], ["Prendedores de cortina Lua", 59, ["decoracao"]], ["Nuvem com tule arco-íris", 129, ["decoracao"]], ["Touca de Urso Panda", 69, ["fantasias"]], ["Touca de unicórnio", 69, ["fantasias"]], ["Tapete Educativo Fazenda", 129.9, ["bebes", "decoracao", "educativo"]], ["Porta maternidade Nuvens e ovelhas", 249, ["bebes", "decoracao"]], ["Bandeirola estrela", 39.9, ["decoracao", "natal"]], ["Almofada de Amamentação de Ovelha", 149, ["almofadas", "bebes"]], ["Móbile de Ovelha", 249, ["bebes", "decoracao"]], ["Naninha de Coelho", 108, ["bebes"]], ["Naninha de Ovelha", 108, ["bebes"]], ["Almofada Ovelha", 109.9, ["almofadas"]], ["Fantasia de Lagarta", 189, ["fantasias"]], ["Naninha de Girafa", 89.9, ["bebes"]], ["Naninha de Raposa", 108, ["raposas", "bebes"]], ["Fantasia de Pantera cor de Rosa", 108, ["fantasias"]], ["Asa Colorida em Feltro", 89.9, ["asas"]], ["Fantasia de Gavião", 129, ["passaros", "fantasias"]], ["Fantasia de Borboleta", 169, ["asas", "fantasias"]], ["Asa de Borboleta", 139, ["asas"]], ["Almofada Nuvem Feliz", 89.9, ["almofadas", "decoracao"]], ["Móbile de Nuvem com estrelas", 129.7, ["bebes", "decoracao"]], ["Raposa", 129, ["raposas", "decoracao"]], ["Orelhas de animais", 41.2, ["acessorios"]], ["Fantasia de Flamingo com Asas", 189, ["passaros", "asas", "fantasias"]], ["Fantasia de Coelho", 169, ["fantasias"]], ["Orelhinhas e Patinhas de bichos", 110, ["acessorios"]], ["Dinossauro de Parede", 89.9, ["decoracao"]], ["Tiara de Coelho com Rabinho", 49.9, ["acessorios"]], ["Fantasia de Sushi", 129.9, ["fantasias"]], ["Fantasia de Cisne", 109.9, ["passaros", "fantasias"]], ["Fantasia de Pavão com Saia de Tule", 169, ["passaros", "fantasias"]], ["Fantasia de Pavão", 149, ["passaros", "fantasias"]], ["Fantasia de Dragão", 141.5, ["fantasias"]], ["Tiara Nuvem", 49.9, ["acessorios"]], ["Fantasia Gatinho", 89.9, ["fantasias"]], ["Fantasia Macaco", 79.9, ["fantasias"]], ["Fantasia Coruja", 129, ["passaros", "fantasias"]], ["Fantasia de Pássaro", 129, ["passaros", "fantasias"]], ["Bolsa Folha", 99.9, ["bolsas"]], ["Fantasia de Unicórnio com Asas", 199, ["asas", "fantasias"]], ["Fantasia de Formiga", 119, ["fantasias"]], ["Prendedores de Cortina Nuvens", 59.9, ["decoracao"]], ["Tiara de Sereia", 79, ["fantasias", "acessorios"]], ["Fantasia Asa e Tiara de Unicórnio", 129, ["asas", "fantasias"]], ["Fantasia de Leão", 89.9, ["fantasias"]], ["Fantasia de Cupido", 149.9, ["flores", "fantasias"]], ["Bandeirolas", 89.9, ["decoracao"]], ["Tapete Educativo Espacial", 129.9, ["bebes", "decoracao", "educativo"]], ["Almofada Gotinha", 89.9, ["almofadas"]], ["Almofada Lua", 89.9, ["almofadas", "decoracao"]], ["Asas de Feltro", 89.9, ["asas"]], ["Nuvem com Corações Coloridos", 119, ["decoracao"]], ["Balão Decorativo", 169, ["decoracao"]], ["Fantasia Pantera Cor de Rosa", 69.9, ["fantasias"]], ["Arco Íris com Nuvens", 199, ["decoracao"]], ["Almofada Unicórnio", 89, ["almofadas"]], ["Almofada Trevo", 89.9, ["almofadas", "decoracao"]], ["Almofada Raposa", 119.9, ["raposas", "almofadas"]], ["Fantasia de Raposa", 70, ["raposas", "fantasias"]], ["Porta Treco Nuvem", 47.2, ["decoracao"]], ["Fantasia de Pirata", 129, ["fantasias"]], ["Tapete Educativo Fundo do Mar", 129.9, ["bebes", "decoracao", "educativo"]], ["Saia de Tule", 89, ["fantasias"]], ["Raposa", 32.3, ["raposas", "decoracao"]], ["Fantasia de Jacaré", 89.9, ["fantasias"]], ["Fantasia de Unicórnio", 169, ["fantasias"]], ["Tiara de Unicórnio", 47.9, ["acessorios"]], ["Galinha ou Pata com filhotes", 104, ["passaros", "decoracao", "plush"]], ["Urso em plush", 269, ["decoracao", "plush"]], ["Almofada Casinha", 59.9, ["almofadas", "decoracao"]], ["Castelo Educativo", 69.9, ["bebes", "educativo"]], ["Bola Quebra-Cabeça Montessori", 79.9, ["bebes", "educativo"]], ["Ursos com roupinhas", 224.1, ["decoracao", "plush"]], ["Ratinho com gravata", 289, ["decoracao", "plush"]], ["Tulipas em Tecido", 15.3, ["flores", "decoracao"]], ["Nuvens e Balões", 89, ["decoracao"]], ["Bandeirolas de coração", 44, ["decoracao"]], ["Naninha de Ursinho", 105, ["bebes"]], ["Casal de coelhos", 100, ["decoracao", "plush"]], ["Almofada Carro", 89.9, ["almofadas"]], ["Lanche Educativo", 79, ["bebes", "educativo"]], ["Bolo Educativo em Tecido", 89, ["bebes", "educativo"]], ["Chaveiros Cupcakes", 20, ["lembrancinhas"]], ["Porta Maternidade Ursinho", 270, ["bebes", "decoracao"]], ["Almofada Estrela", 109, ["almofadas", "decoracao"]], ["Unicórnio de Parede", 109, ["decoracao"]], ["Almofada Cacto", 89, ["almofadas"]], ["Vaso de Cacto", 89.9, ["decoracao"]], ["Nuvem com pernas", 129.7, ["decoracao"]], ["Almofada Sorvete", 109, ["almofadas"]], ["Fantasia de Dinossauro", 89.9, ["fantasias"]], ["Máscaras De Bichinhos", 29.9, ["fantasias", "acessorios"]], ["Coroa Dupla-Face em Feltro", 35, ["acessorios"]], ["Tapete Educativo Vitória-Régia", 89.9, ["bebes", "flores", "decoracao", "educativo"]], ["Bola Arco-Íris Montessori", 65, ["bebes", "educativo"]], ["Torre de Hanói", 89.9, ["bebes", "educativo"]], ["Sorvete educativo", 59, ["bebes", "educativo"]], ["Quebra-cabeças educativo", 109, ["bebes", "educativo"]], ["Almofada guitarra", 109, ["almofadas"]], ["Kit Ferramentas Educativo", 59.9, ["bebes", "educativo"]], ["Câmera Fotográfica em feltro", 33, ["educativo"]], ["Pipas em feltro", 6.9, ["lembrancinhas"]]];
+
+let products = [];
+let fotosMap = {}; // produto_id -> [{id, url}]
+let activeCollection = "all";
+let editingId = null;
+let detailId = null;
+let galleryIdx = 0;
+
+// ── SUPABASE HELPERS ──────────────────────────────────────────
+
+async function loadProducts() {
+  const { data, error } = await sb.from("produtos").select("*").order("name");
+  if (error) { showToast("Erro ao carregar produtos: " + error.message); return []; }
+  return data;
+}
+
+async function loadFotos(produtoId) {
+  const { data, error } = await sb.from("fotos").select("*").eq("produto_id", produtoId).order("ordem");
+  if (error) return [];
+  return data;
+}
+
+async function loadAllFotos() {
+  const { data, error } = await sb.from("fotos").select("*").order("ordem");
+  if (error) return [];
+  // build map
+  const map = {};
+  for (const f of data) {
+    if (!map[f.produto_id]) map[f.produto_id] = [];
+    map[f.produto_id].push(f);
+  }
+  return map;
+}
+
+async function upsertProduct(name, price, collections) {
+  const { data, error } = await sb.from("produtos")
+    .insert({ name, price, collections })
+    .select().single();
+  if (error) throw error;
+  return data;
+}
+
+async function updateProduct(id, name, price, collections) {
+  const { error } = await sb.from("produtos").update({ name, price, collections }).eq("id", id);
+  if (error) throw error;
+}
+
+async function deleteProductDB(id) {
+  // fotos cascade deletes via FK, but also delete from storage
+  const fotos = fotosMap[id] || [];
+  for (const f of fotos) {
+    const path = f.url.split("/fotos/")[1];
+    if (path) await sb.storage.from("fotos").remove([path]);
+  }
+  const { error } = await sb.from("produtos").delete().eq("id", id);
+  if (error) throw error;
+}
+
+async function uploadFoto(produtoId, file) {
+  const ext = file.name.split(".").pop().toLowerCase() || "jpg";
+  const path = `${produtoId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error: upErr } = await sb.storage.from("fotos").upload(path, file, { upsert: false });
+  if (upErr) throw upErr;
+  const { data: { publicUrl } } = sb.storage.from("fotos").getPublicUrl(path);
+  const ordem = (fotosMap[produtoId] || []).length;
+  const { data: fRow, error: dbErr } = await sb.storage && await sb.from("fotos")
+    .insert({ produto_id: produtoId, url: publicUrl, ordem }).select().single();
+  if (dbErr) throw dbErr;
+  if (!fotosMap[produtoId]) fotosMap[produtoId] = [];
+  fotosMap[produtoId].push(fRow);
+  return fRow;
+}
+
+async function deleteFotoDB(fotoId, url) {
+  const path = url.split("/object/public/fotos/")[1];
+  if (path) await sb.storage.from("fotos").remove([decodeURIComponent(path)]);
+  await sb.from("fotos").delete().eq("id", fotoId);
+  for (const pid in fotosMap) {
+    fotosMap[pid] = fotosMap[pid].filter(f => f.id !== fotoId);
+  }
+}
+
+// ── SEED: populate DB from RAW if empty ───────────────────────
+
+async function seedIfEmpty() {
+  const { count } = await sb.from("produtos").select("*", { count: "exact", head: true });
+  if (count > 0) return;
+  showToast("Primeira vez! Importando produtos...");
+  const chunks = [];
+  for (let i = 0; i < RAW.length; i += 50) chunks.push(RAW.slice(i, i+50));
+  for (const chunk of chunks) {
+    await sb.from("produtos").insert(chunk.map(([name, price, collections]) => ({ name, price, collections })));
+  }
+  showToast("✓ " + RAW.length + " produtos importados!");
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+
+async function init() {
+  await seedIfEmpty();
+  products = await loadProducts();
+  fotosMap = await loadAllFotos();
+  document.getElementById("loadingScreen").style.display = "none";
+  buildSidebar();
+  applyFilters();
+}
+
+// ── UI ────────────────────────────────────────────────────────
+
+function showToast(msg, duration = 2500) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), duration);
+}
+
+function buildSidebar() {
+  const sidebar = document.getElementById("sidebar");
+  let html = `<div class="sidebar-title">Coleções</div>`;
+  const allActive = activeCollection === "all" ? "active" : "";
+  html += `<button class="collection-btn ${allActive}" onclick="setCollection('all')">
+    <span class="icon">🌸</span> Todos <span class="badge">${products.length}</span></button>`;
+  html += `<div class="sidebar-sep"></div>`;
+  for (const c of COLLECTIONS) {
+    const count = products.filter(p => p.collections && p.collections.includes(c.id)).length;
+    const active = activeCollection === c.id ? "active" : "";
+    html += `<button class="collection-btn ${active}" onclick="setCollection('${c.id}')">
+      <span class="icon">${c.icon}</span> ${c.label} <span class="badge">${count}</span></button>`;
+  }
+  sidebar.innerHTML = html;
+}
+
+function setCollection(id) {
+  activeCollection = id;
+  document.getElementById("searchInput").value = "";
+  buildSidebar();
+  applyFilters();
+}
+
+function applyFilters() {
+  const q = document.getElementById("searchInput").value.toLowerCase().trim();
+  const sort = document.getElementById("sortSelect").value;
+  let list = [...products];
+  if (activeCollection !== "all") list = list.filter(p => p.collections && p.collections.includes(activeCollection));
+  if (q) list = list.filter(p => p.name.toLowerCase().includes(q));
+  if (sort === "az") list.sort((a,b) => a.name.localeCompare(b.name,"pt"));
+  else if (sort === "za") list.sort((a,b) => b.name.localeCompare(a.name,"pt"));
+  else if (sort === "asc") list.sort((a,b) => a.price - b.price);
+  else if (sort === "desc") list.sort((a,b) => b.price - a.price);
+  else if (sort === "foto") list.sort((a,b) => ((fotosMap[b.id]||[]).length > 0 ? 1 : 0) - ((fotosMap[a.id]||[]).length > 0 ? 1 : 0));
+  renderGrid(list);
+  const collLabel = activeCollection === "all" ? "Todos os produtos" : COLLECTIONS.find(c => c.id === activeCollection)?.label || "";
+  document.getElementById("sectionTitle").textContent = collLabel;
+  document.getElementById("sectionSub").textContent = `${list.length} produto${list.length !== 1 ? "s" : ""}`;
+  document.getElementById("headerCount").textContent = `${list.length} produto${list.length !== 1 ? "s" : ""}`;
+}
+
+function renderGrid(list) {
+  const grid = document.getElementById("grid");
+  const empty = document.getElementById("emptyState");
+  if (!list.length) { grid.innerHTML = ""; empty.style.display = "block"; return; }
+  empty.style.display = "none";
+  grid.innerHTML = list.map(p => {
+    const fotos = fotosMap[p.id] || [];
+    const tags = (p.collections || []).map(cid => {
+      const c = COLLECTIONS.find(x => x.id === cid);
+      return c ? `<span class="tag">${c.label}</span>` : "";
+    }).join("");
+    const imgHtml = fotos.length > 0
+      ? `<img class="card-img" src="${fotos[0].url}" alt="${p.name}" loading="lazy">`
+      : `<div class="card-no-img">🌸<span>sem foto</span></div>`;
+    return `<div class="card" onclick="openDetail(${p.id})">
+      ${imgHtml}
+      <div class="card-body">
+        <div class="card-name">${p.name}</div>
+        <div class="card-price">R$ ${Number(p.price).toFixed(2).replace(".",",")}</div>
+        <div class="card-tags">${tags}</div>
+      </div></div>`;
+  }).join("");
+}
+
+// ── ADD / EDIT MODAL ──────────────────────────────────────────
+
+function openAddModal(id = null) {
+  editingId = id;
+  document.getElementById("modalTitle").textContent = id ? "Editar produto" : "Novo produto";
+  document.getElementById("btnDelete").style.display = id ? "block" : "none";
+  const checkboxes = document.getElementById("collCheckboxes");
+  checkboxes.innerHTML = COLLECTIONS.map(c =>
+    `<label class="coll-check" id="chk_${c.id}"><input type="checkbox" value="${c.id}" onchange="updateCheck('${c.id}')"> ${c.icon} ${c.label}</label>`
+  ).join("");
+  if (id) {
+    const p = products.find(x => x.id === id);
+    document.getElementById("fName").value = p.name;
+    document.getElementById("fPrice").value = p.price;
+    (p.collections || []).forEach(cid => {
+      const el = document.querySelector(`#chk_${cid} input`);
+      if (el) { el.checked = true; document.getElementById(`chk_${cid}`).classList.add("checked"); }
+    });
+  } else {
+    document.getElementById("fName").value = "";
+    document.getElementById("fPrice").value = "";
+  }
+  closeDetail();
+  document.getElementById("addModal").classList.add("open");
+}
+
+function updateCheck(cid) {
+  const el = document.querySelector(`#chk_${cid} input`);
+  document.getElementById(`chk_${cid}`).classList.toggle("checked", el.checked);
+}
+
+function closeAddModal() {
+  document.getElementById("addModal").classList.remove("open");
+  editingId = null;
+}
+
+async function saveProduct() {
+  const name = document.getElementById("fName").value.trim();
+  const price = parseFloat(document.getElementById("fPrice").value);
+  if (!name || isNaN(price)) { alert("Preencha nome e preço."); return; }
+  const colls = Array.from(document.querySelectorAll("#collCheckboxes input:checked")).map(x => x.value);
+  try {
+    if (editingId) {
+      await updateProduct(editingId, name, price, colls);
+      const p = products.find(x => x.id === editingId);
+      p.name = name; p.price = price; p.collections = colls;
+      showToast("✓ Produto atualizado");
+    } else {
+      const p = await upsertProduct(name, price, colls);
+      products.push(p);
+      showToast("✓ Produto adicionado");
+    }
+    buildSidebar(); applyFilters(); closeAddModal();
+  } catch(e) { showToast("Erro: " + e.message); }
+}
+
+async function deleteProduct() {
+  if (!editingId || !confirm("Excluir este produto?")) return;
+  try {
+    await deleteProductDB(editingId);
+    products = products.filter(p => p.id !== editingId);
+    delete fotosMap[editingId];
+    buildSidebar(); applyFilters(); closeAddModal();
+    showToast("Produto excluído");
+  } catch(e) { showToast("Erro: " + e.message); }
+}
+
+// ── DETAIL MODAL ──────────────────────────────────────────────
+
+function openDetail(id) {
+  detailId = id;
+  galleryIdx = 0;
+  const p = products.find(x => x.id === id);
+  document.getElementById("detailName").textContent = p.name;
+  document.getElementById("detailPrice").textContent = `R$ ${Number(p.price).toFixed(2).replace(".",",")}`;
+  const tags = (p.collections || []).map(cid => {
+    const c = COLLECTIONS.find(x => x.id === cid);
+    return c ? `<span class="tag">${c.icon} ${c.label}</span>` : "";
+  }).join("");
+  document.getElementById("detailTags").innerHTML = tags;
+  document.getElementById("uploadProgress").style.display = "none";
+  renderGallery();
+  document.getElementById("detailModal").classList.add("open");
+}
+
+function closeDetail() { document.getElementById("detailModal").classList.remove("open"); detailId = null; }
+
+function renderGallery() {
+  const fotos = fotosMap[detailId] || [];
+  const el = document.getElementById("detailImg");
+  if (!fotos.length) { el.innerHTML = `<div class="detail-no-img">🌸</div>`; return; }
+  galleryIdx = Math.min(galleryIdx, fotos.length - 1);
+  const nav = fotos.length > 1
+    ? `<div class="gallery-nav">
+        <button onclick="galleryPrev()" ${galleryIdx === 0 ? "disabled" : ""}>‹</button>
+        <span>${galleryIdx + 1} / ${fotos.length}</span>
+        <button onclick="galleryNext()" ${galleryIdx === fotos.length - 1 ? "disabled" : ""}>›</button>
+        <button class="btn-del-photo" onclick="removeFoto()">🗑</button>
+       </div>`
+    : `<div class="gallery-nav" style="justify-content:flex-end">
+        <button class="btn-del-photo" onclick="removeFoto()">🗑 Remover foto</button>
+       </div>`;
+  el.innerHTML = `<img class="detail-img" src="${fotos[galleryIdx].url}" alt="">${nav}`;
+}
+
+function galleryPrev() { galleryIdx = Math.max(0, galleryIdx - 1); renderGallery(); }
+function galleryNext() { galleryIdx = Math.min((fotosMap[detailId]||[]).length - 1, galleryIdx + 1); renderGallery(); }
+
+async function removeFoto() {
+  const fotos = fotosMap[detailId] || [];
+  if (!fotos.length || !confirm("Remover esta foto?")) return;
+  const f = fotos[galleryIdx];
+  try {
+    await deleteFotoDB(f.id, f.url);
+    galleryIdx = Math.max(0, galleryIdx - 1);
+    renderGallery();
+    applyFilters();
+    showToast("Foto removida");
+  } catch(e) { showToast("Erro: " + e.message); }
+}
+
+async function uploadPhotos(files) {
+  if (!files.length || !detailId) return;
+  const prog = document.getElementById("uploadProgress");
+  prog.style.display = "block";
+  let done = 0;
+  for (const file of Array.from(files)) {
+    prog.textContent = `Enviando ${done + 1} de ${files.length}...`;
+    try {
+      await uploadFoto(detailId, file);
+      done++;
+    } catch(e) { showToast("Erro no upload: " + e.message); }
+  }
+  prog.textContent = `✓ ${done} foto${done !== 1 ? "s" : ""} adicionada${done !== 1 ? "s" : ""}!`;
+  setTimeout(() => prog.style.display = "none", 2000);
+  galleryIdx = (fotosMap[detailId] || []).length - 1;
+  renderGallery();
+  applyFilters();
+  document.getElementById("detailUpload").value = "";
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById("uploadZone").classList.remove("dragover");
+  uploadPhotos(e.dataTransfer.files);
+}
+
+function openEditFromDetail() { const id = detailId; closeDetail(); openAddModal(id); }
+
+// CLOSE ON OVERLAY CLICK
+document.getElementById("addModal").addEventListener("click", e => { if (e.target === document.getElementById("addModal")) closeAddModal(); });
+document.getElementById("detailModal").addEventListener("click", e => { if (e.target === document.getElementById("detailModal")) closeDetail(); });
+
+init();
+</script>
+</body>
+</html>
