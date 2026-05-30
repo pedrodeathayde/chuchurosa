@@ -339,8 +339,8 @@ async function deleteProductDB(id) {
   // fotos cascade deletes via FK, but also delete from storage
   const fotos = fotosMap[id] || [];
   for (const f of fotos) {
-    const path = f.url.split("/fotos/")[1];
-    if (path) await sb.storage.from("fotos").remove([path]);
+    const path = f.url.split("/Fotos/")[1];
+    if (path) await sb.storage.from("Fotos").remove([path]);
   }
   const { error } = await sb.from("produtos").delete().eq("id", id);
   if (error) throw error;
@@ -349,9 +349,9 @@ async function deleteProductDB(id) {
 async function uploadFoto(produtoId, file) {
   const ext = file.name.split(".").pop().toLowerCase() || "jpg";
   const path = `${produtoId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-  const { error: upErr } = await sb.storage.from("fotos").upload(path, file, { upsert: false });
+  const { error: upErr } = await sb.storage.from("Fotos").upload(path, file, { upsert: false });
   if (upErr) throw upErr;
-  const { data: { publicUrl } } = sb.storage.from("fotos").getPublicUrl(path);
+  const { data: { publicUrl } } = sb.storage.from("Fotos").getPublicUrl(path);
   const ordem = (fotosMap[produtoId] || []).length;
   const { data: fRow, error: dbErr } = await sb.storage && await sb.from("fotos")
     .insert({ produto_id: produtoId, url: publicUrl, ordem }).select().single();
@@ -362,8 +362,8 @@ async function uploadFoto(produtoId, file) {
 }
 
 async function deleteFotoDB(fotoId, url) {
-  const path = url.split("/object/public/fotos/")[1];
-  if (path) await sb.storage.from("fotos").remove([decodeURIComponent(path)]);
+  const path = url.split("/object/public/Fotos/")[1];
+  if (path) await sb.storage.from("Fotos").remove([decodeURIComponent(path)]);
   await sb.from("fotos").delete().eq("id", fotoId);
   for (const pid in fotosMap) {
     fotosMap[pid] = fotosMap[pid].filter(f => f.id !== fotoId);
