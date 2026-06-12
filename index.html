@@ -325,12 +325,9 @@ let viewMode = 'grid';
 let activeFilters = { semFoto: false, naLoja: false, arquivados: false };
 
 async function init() {
-  const [prods, fotos] = await Promise.all([
-    sb.from('produtos').select('*').order('name'),
-    sb.from('fotos').select('*').order('ordem')
-  ]);
-  products = prods.data || [];
-  // Seed if empty
+  // Load products
+  const {data: prodsData} = await sb.from('produtos').select('*').order('name');
+  products = prodsData || [];
   if (!products.length) {
     showToast('Importando produtos...');
     for (let i = 0; i < RAW.length; i += 50) {
@@ -340,8 +337,17 @@ async function init() {
     products = r.data || [];
     showToast('✓ ' + products.length + ' produtos importados!');
   }
+  // Load ALL fotos in batches
+  let allFotos = [], offset = 0;
+  while(true){
+    const {data:chunk} = await sb.from('fotos').select('*').order('ordem').range(offset, offset+999);
+    if(!chunk||!chunk.length) break;
+    allFotos = allFotos.concat(chunk);
+    if(chunk.length < 1000) break;
+    offset += 1000;
+  }
   const map = {};
-  for (const f of (fotos.data || [])) {
+  for (const f of allFotos) {
     if (!map[f.produto_id]) map[f.produto_id] = [];
     map[f.produto_id].push(f);
   }
