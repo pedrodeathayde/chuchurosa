@@ -6,131 +6,6 @@
 <title>Acervo Chuchu Rosa</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-// ── MIGRAÇÃO DE FOTOS ANTIGAS ────────────────────────────────────
-function abrirMigracao(){
-  document.getElementById('migracaoModal').style.display='flex';
-  document.getElementById('migracaoLog').style.display='none';
-  document.getElementById('migracaoLog').innerHTML='';
-  document.getElementById('migracaoProg').style.display='none';
-  document.getElementById('migracaoBar').style.width='0%';
-  document.getElementById('migracaoStartBtn').disabled=false;
-  document.getElementById('migracaoStartBtn').textContent='Iniciar migração';
-}
-
-function fecharMigracao(){
-  document.getElementById('migracaoModal').style.display='none';
-}
-
-function logMigracao(msg){
-  const el=document.getElementById('migracaoLog');
-  el.style.display='block';
-  el.innerHTML+=msg+'<br>';
-  el.scrollTop=el.scrollHeight;
-}
-
-async function iniciarMigracao(){
-  const btn=document.getElementById('migracaoStartBtn');
-  btn.disabled=true;
-  btn.textContent='Migrando...';
-  document.getElementById('migracaoProg').style.display='block';
-  document.getElementById('migracaoLog').innerHTML='';
-  document.getElementById('migracaoLog').style.display='block';
-
-  logMigracao('🔍 Buscando fotos em pastas numéricas...');
-
-  // List all files in bucket root
-  const {data:rootFiles, error:rootErr} = await sb.storage.from('Fotos').list('',{limit:1000});
-  if(rootErr){logMigracao('❌ Erro: '+rootErr.message);btn.disabled=false;return;}
-
-  // Find numeric folders
-  const folders = rootFiles.filter(f=>f.id===null&&/^\d+$/.test(f.name));
-  logMigracao('📁 Pastas encontradas: '+folders.length);
-
-  if(!folders.length){
-    logMigracao('✅ Nenhuma pasta numérica encontrada. Nada a migrar!');
-    btn.disabled=false;btn.textContent='Iniciar migração';return;
-  }
-
-  let total=0, done=0, erros=0;
-
-  // Count total files first
-  for(const folder of folders){
-    const {data:files} = await sb.storage.from('Fotos').list(folder.name,{limit:100});
-    total+=(files||[]).length;
-  }
-  logMigracao('🖼 Total de fotos a migrar: '+total);
-
-  for(const folder of folders){
-    const prodId = parseInt(folder.name);
-    const prod = products.find(p=>p.id===prodId);
-    if(!prod){logMigracao('⚠️ Produto '+prodId+' não encontrado, pulando...');continue;}
-
-    const slug = toSlug(prod.name);
-    const {data:files, error:listErr} = await sb.storage.from('Fotos').list(folder.name,{limit:100});
-    if(listErr||!files?.length){logMigracao('⚠️ Pasta '+folder.name+' vazia ou erro');continue;}
-
-    logMigracao('📦 Migrando: <b>'+prod.name+'</b> ('+files.length+' foto'+(files.length!==1?'s':'')+')');
-
-    for(let i=0;i<files.length;i++){
-      const file=files[i];
-      const oldPath=folder.name+'/'+file.name;
-      const newName = i===0 ? slug+'.jpg' : slug+'-'+(i+1)+'.jpg';
-
-      try{
-        // Download old file
-        const {data:blob, error:dlErr} = await sb.storage.from('Fotos').download(oldPath);
-        if(dlErr)throw dlErr;
-
-        // Compress
-        const compressed = await compressImage(new File([blob], file.name, {type:'image/jpeg'}));
-
-        // Upload with new name
-        const {error:upErr} = await sb.storage.from('Fotos').upload(newName, compressed, {
-          contentType:'image/jpeg', upsert:true
-        });
-        if(upErr)throw upErr;
-
-        // Get new public URL
-        const {data:{publicUrl}} = sb.storage.from('Fotos').getPublicUrl(newName);
-
-        // Update fotos table
-        const oldUrl = SUPABASE_URL+'/storage/v1/object/public/Fotos/'+encodeURIComponent(oldPath);
-        const {error:dbErr} = await sb.from('fotos').update({url:publicUrl}).eq('url', oldUrl);
-        // Also try without encoding
-        if(dbErr){
-          await sb.from('fotos').update({url:publicUrl}).like('url','%'+oldPath+'%');
-        }
-
-        done++;
-        logMigracao('  ✓ '+file.name+' → '+newName);
-      }catch(e){
-        erros++;
-        logMigracao('  ❌ '+file.name+': '+e.message);
-      }
-
-      // Update progress
-      const pct=Math.round(((done+erros)/total)*100);
-      document.getElementById('migracaoBar').style.width=pct+'%';
-      document.getElementById('migracaoStatus').textContent=done+' migradas, '+erros+' erros ('+pct+'%)';
-    }
-  }
-
-  logMigracao('');
-  logMigracao('✅ Migração concluída! '+done+' fotos migradas, '+erros+' erros.');
-  logMigracao('💡 As pastas antigas ainda existem no Storage — você pode deletá-las manualmente.');
-
-  // Reload fotos
-  const {data:novasFotos} = await sb.from('fotos').select('*').order('ordem');
-  if(novasFotos){
-    fotosMap={};
-    novasFotos.forEach(f=>{if(!fotosMap[f.produto_id])fotosMap[f.produto_id]=[];fotosMap[f.produto_id].push(f);});
-  }
-
-  btn.disabled=false;
-  btn.textContent='Concluído ✓';
-  applyFilters();buildStats();
-}
-
 </script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -349,7 +224,7 @@ main { flex: 1; padding: 1.5rem; min-width: 0; }
         <button class="filter-btn" id="btnSemFoto" onclick="toggleFilter('semFoto')">📷 Sem foto</button>
         <button class="filter-btn" id="btnNaLoja" onclick="toggleFilter('naLoja')">🛍 Na loja</button>
         <button class="filter-btn" id="btnArquivados" onclick="toggleFilter('arquivados')">📦 Arquivados</button>
-        <button class="filter-btn" onclick="abrirMigracao()" style="background:rgba(229,37,100,.1);color:var(--rosa);border-color:var(--rosa)">🔄 Migrar fotos antigas</button>
+        <button onclick="abrirMigracao()" style="background:rgba(229,37,100,.08);color:var(--rosa);border:1px solid var(--rosa);border-radius:6px;padding:6px 12px;font-size:.82rem;font-weight:600;cursor:pointer">🔄 Migrar fotos antigas</button>
         <select class="sort-select" id="sortSelect" onchange="applyFilters()">
           <option value="az">Nome A–Z</option>
           <option value="za">Nome Z–A</option>
@@ -868,6 +743,133 @@ document.getElementById('addModal').addEventListener('click', e=>{ if(e.target==
 document.getElementById('detailModal').addEventListener('click', e=>{ if(e.target===document.getElementById('detailModal')) closeDetail(); });
 
 init();
+
+// ── MIGRAÇÃO DE FOTOS ANTIGAS ────────────────────────────────────
+function abrirMigracao(){
+  document.getElementById('migracaoModal').style.display='flex';
+  document.getElementById('migracaoLog').style.display='none';
+  document.getElementById('migracaoLog').innerHTML='';
+  document.getElementById('migracaoProg').style.display='none';
+  document.getElementById('migracaoBar').style.width='0%';
+  document.getElementById('migracaoStartBtn').disabled=false;
+  document.getElementById('migracaoStartBtn').textContent='Iniciar migração';
+}
+
+function fecharMigracao(){
+  document.getElementById('migracaoModal').style.display='none';
+}
+
+function logMigracao(msg){
+  const el=document.getElementById('migracaoLog');
+  el.style.display='block';
+  el.innerHTML+=msg+'<br>';
+  el.scrollTop=el.scrollHeight;
+}
+
+async function iniciarMigracao(){
+  const btn=document.getElementById('migracaoStartBtn');
+  btn.disabled=true;
+  btn.textContent='Migrando...';
+  document.getElementById('migracaoProg').style.display='block';
+  document.getElementById('migracaoLog').innerHTML='';
+  document.getElementById('migracaoLog').style.display='block';
+
+  logMigracao('🔍 Buscando fotos em pastas numéricas...');
+
+  // List all files in bucket root
+  const {data:rootFiles, error:rootErr} = await sb.storage.from('Fotos').list('',{limit:1000});
+  if(rootErr){logMigracao('❌ Erro: '+rootErr.message);btn.disabled=false;return;}
+
+  // Find numeric folders
+  const folders = rootFiles.filter(f=>f.id===null&&/^\d+$/.test(f.name));
+  logMigracao('📁 Pastas encontradas: '+folders.length);
+
+  if(!folders.length){
+    logMigracao('✅ Nenhuma pasta numérica encontrada. Nada a migrar!');
+    btn.disabled=false;btn.textContent='Iniciar migração';return;
+  }
+
+  let total=0, done=0, erros=0;
+
+  // Count total files first
+  for(const folder of folders){
+    const {data:files} = await sb.storage.from('Fotos').list(folder.name,{limit:100});
+    total+=(files||[]).length;
+  }
+  logMigracao('🖼 Total de fotos a migrar: '+total);
+
+  for(const folder of folders){
+    const prodId = parseInt(folder.name);
+    const prod = products.find(p=>p.id===prodId);
+    if(!prod){logMigracao('⚠️ Produto '+prodId+' não encontrado, pulando...');continue;}
+
+    const slug = toSlug(prod.name);
+    const {data:files, error:listErr} = await sb.storage.from('Fotos').list(folder.name,{limit:100});
+    if(listErr||!files?.length){logMigracao('⚠️ Pasta '+folder.name+' vazia ou erro');continue;}
+
+    logMigracao('📦 Migrando: <b>'+prod.name+'</b> ('+files.length+' foto'+(files.length!==1?'s':'')+')');
+
+    for(let i=0;i<files.length;i++){
+      const file=files[i];
+      const oldPath=folder.name+'/'+file.name;
+      const newName = i===0 ? slug+'.jpg' : slug+'-'+(i+1)+'.jpg';
+
+      try{
+        // Download old file
+        const {data:blob, error:dlErr} = await sb.storage.from('Fotos').download(oldPath);
+        if(dlErr)throw dlErr;
+
+        // Compress
+        const compressed = await compressImage(new File([blob], file.name, {type:'image/jpeg'}));
+
+        // Upload with new name
+        const {error:upErr} = await sb.storage.from('Fotos').upload(newName, compressed, {
+          contentType:'image/jpeg', upsert:true
+        });
+        if(upErr)throw upErr;
+
+        // Get new public URL
+        const {data:{publicUrl}} = sb.storage.from('Fotos').getPublicUrl(newName);
+
+        // Update fotos table
+        const oldUrl = SUPABASE_URL+'/storage/v1/object/public/Fotos/'+encodeURIComponent(oldPath);
+        const {error:dbErr} = await sb.from('fotos').update({url:publicUrl}).eq('url', oldUrl);
+        // Also try without encoding
+        if(dbErr){
+          await sb.from('fotos').update({url:publicUrl}).like('url','%'+oldPath+'%');
+        }
+
+        done++;
+        logMigracao('  ✓ '+file.name+' → '+newName);
+      }catch(e){
+        erros++;
+        logMigracao('  ❌ '+file.name+': '+e.message);
+      }
+
+      // Update progress
+      const pct=Math.round(((done+erros)/total)*100);
+      document.getElementById('migracaoBar').style.width=pct+'%';
+      document.getElementById('migracaoStatus').textContent=done+' migradas, '+erros+' erros ('+pct+'%)';
+    }
+  }
+
+  logMigracao('');
+  logMigracao('✅ Migração concluída! '+done+' fotos migradas, '+erros+' erros.');
+  logMigracao('💡 As pastas antigas ainda existem no Storage — você pode deletá-las manualmente.');
+
+  // Reload fotos
+  const {data:novasFotos} = await sb.from('fotos').select('*').order('ordem');
+  if(novasFotos){
+    fotosMap={};
+    novasFotos.forEach(f=>{if(!fotosMap[f.produto_id])fotosMap[f.produto_id]=[];fotosMap[f.produto_id].push(f);});
+  }
+
+  btn.disabled=false;
+  btn.textContent='Concluído ✓';
+  applyFilters();buildStats();
+}
+
+
 </script>
 
 <!-- MIGRATION MODAL -->
