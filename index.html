@@ -5,7 +5,133 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Acervo Chuchu Rosa</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+// ── MIGRAÇÃO DE FOTOS ANTIGAS ────────────────────────────────────
+function abrirMigracao(){
+  document.getElementById('migracaoModal').style.display='flex';
+  document.getElementById('migracaoLog').style.display='none';
+  document.getElementById('migracaoLog').innerHTML='';
+  document.getElementById('migracaoProg').style.display='none';
+  document.getElementById('migracaoBar').style.width='0%';
+  document.getElementById('migracaoStartBtn').disabled=false;
+  document.getElementById('migracaoStartBtn').textContent='Iniciar migração';
+}
+
+function fecharMigracao(){
+  document.getElementById('migracaoModal').style.display='none';
+}
+
+function logMigracao(msg){
+  const el=document.getElementById('migracaoLog');
+  el.style.display='block';
+  el.innerHTML+=msg+'<br>';
+  el.scrollTop=el.scrollHeight;
+}
+
+async function iniciarMigracao(){
+  const btn=document.getElementById('migracaoStartBtn');
+  btn.disabled=true;
+  btn.textContent='Migrando...';
+  document.getElementById('migracaoProg').style.display='block';
+  document.getElementById('migracaoLog').innerHTML='';
+  document.getElementById('migracaoLog').style.display='block';
+
+  logMigracao('🔍 Buscando fotos em pastas numéricas...');
+
+  // List all files in bucket root
+  const {data:rootFiles, error:rootErr} = await sb.storage.from('Fotos').list('',{limit:1000});
+  if(rootErr){logMigracao('❌ Erro: '+rootErr.message);btn.disabled=false;return;}
+
+  // Find numeric folders
+  const folders = rootFiles.filter(f=>f.id===null&&/^\d+$/.test(f.name));
+  logMigracao('📁 Pastas encontradas: '+folders.length);
+
+  if(!folders.length){
+    logMigracao('✅ Nenhuma pasta numérica encontrada. Nada a migrar!');
+    btn.disabled=false;btn.textContent='Iniciar migração';return;
+  }
+
+  let total=0, done=0, erros=0;
+
+  // Count total files first
+  for(const folder of folders){
+    const {data:files} = await sb.storage.from('Fotos').list(folder.name,{limit:100});
+    total+=(files||[]).length;
+  }
+  logMigracao('🖼 Total de fotos a migrar: '+total);
+
+  for(const folder of folders){
+    const prodId = parseInt(folder.name);
+    const prod = products.find(p=>p.id===prodId);
+    if(!prod){logMigracao('⚠️ Produto '+prodId+' não encontrado, pulando...');continue;}
+
+    const slug = toSlug(prod.name);
+    const {data:files, error:listErr} = await sb.storage.from('Fotos').list(folder.name,{limit:100});
+    if(listErr||!files?.length){logMigracao('⚠️ Pasta '+folder.name+' vazia ou erro');continue;}
+
+    logMigracao('📦 Migrando: <b>'+prod.name+'</b> ('+files.length+' foto'+(files.length!==1?'s':'')+')');
+
+    for(let i=0;i<files.length;i++){
+      const file=files[i];
+      const oldPath=folder.name+'/'+file.name;
+      const newName = i===0 ? slug+'.jpg' : slug+'-'+(i+1)+'.jpg';
+
+      try{
+        // Download old file
+        const {data:blob, error:dlErr} = await sb.storage.from('Fotos').download(oldPath);
+        if(dlErr)throw dlErr;
+
+        // Compress
+        const compressed = await compressImage(new File([blob], file.name, {type:'image/jpeg'}));
+
+        // Upload with new name
+        const {error:upErr} = await sb.storage.from('Fotos').upload(newName, compressed, {
+          contentType:'image/jpeg', upsert:true
+        });
+        if(upErr)throw upErr;
+
+        // Get new public URL
+        const {data:{publicUrl}} = sb.storage.from('Fotos').getPublicUrl(newName);
+
+        // Update fotos table
+        const oldUrl = SUPABASE_URL+'/storage/v1/object/public/Fotos/'+encodeURIComponent(oldPath);
+        const {error:dbErr} = await sb.from('fotos').update({url:publicUrl}).eq('url', oldUrl);
+        // Also try without encoding
+        if(dbErr){
+          await sb.from('fotos').update({url:publicUrl}).like('url','%'+oldPath+'%');
+        }
+
+        done++;
+        logMigracao('  ✓ '+file.name+' → '+newName);
+      }catch(e){
+        erros++;
+        logMigracao('  ❌ '+file.name+': '+e.message);
+      }
+
+      // Update progress
+      const pct=Math.round(((done+erros)/total)*100);
+      document.getElementById('migracaoBar').style.width=pct+'%';
+      document.getElementById('migracaoStatus').textContent=done+' migradas, '+erros+' erros ('+pct+'%)';
+    }
+  }
+
+  logMigracao('');
+  logMigracao('✅ Migração concluída! '+done+' fotos migradas, '+erros+' erros.');
+  logMigracao('💡 As pastas antigas ainda existem no Storage — você pode deletá-las manualmente.');
+
+  // Reload fotos
+  const {data:novasFotos} = await sb.from('fotos').select('*').order('ordem');
+  if(novasFotos){
+    fotosMap={};
+    novasFotos.forEach(f=>{if(!fotosMap[f.produto_id])fotosMap[f.produto_id]=[];fotosMap[f.produto_id].push(f);});
+  }
+
+  btn.disabled=false;
+  btn.textContent='Concluído ✓';
+  applyFilters();buildStats();
+}
+
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -223,6 +349,7 @@ main { flex: 1; padding: 1.5rem; min-width: 0; }
         <button class="filter-btn" id="btnSemFoto" onclick="toggleFilter('semFoto')">📷 Sem foto</button>
         <button class="filter-btn" id="btnNaLoja" onclick="toggleFilter('naLoja')">🛍 Na loja</button>
         <button class="filter-btn" id="btnArquivados" onclick="toggleFilter('arquivados')">📦 Arquivados</button>
+        <button class="filter-btn" onclick="abrirMigracao()" style="background:rgba(229,37,100,.1);color:var(--rosa);border-color:var(--rosa)">🔄 Migrar fotos antigas</button>
         <select class="sort-select" id="sortSelect" onchange="applyFilters()">
           <option value="az">Nome A–Z</option>
           <option value="za">Nome Z–A</option>
@@ -742,5 +869,34 @@ document.getElementById('detailModal').addEventListener('click', e=>{ if(e.targe
 
 init();
 </script>
+
+<!-- MIGRATION MODAL -->
+<div id="migracaoModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:28px;max-width:520px;width:92vw;box-shadow:0 24px 64px rgba(0,0,0,.2)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2 style="font-family:var(--display);font-size:1.1rem;margin:0">🔄 Migrar fotos antigas</h2>
+      <button onclick="fecharMigracao()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--cinza)">✕</button>
+    </div>
+    <p style="font-size:.85rem;color:var(--cinza);margin-bottom:16px;line-height:1.6">
+      Fotos em pastas numéricas (ex: <code>24/foto.jpg</code>) serão renomeadas para o slug do produto (ex: <code>fantasia-arara-azul.jpg</code>), compactadas e a URL atualizada na tabela <code>fotos</code>.
+    </p>
+    <div id="migracaoLog" style="background:#f8f0f6;border-radius:10px;padding:12px;font-size:.78rem;font-family:monospace;max-height:200px;overflow-y:auto;margin-bottom:16px;display:none"></div>
+    <div id="migracaoProg" style="display:none;margin-bottom:12px">
+      <div style="background:#f0ebe8;border-radius:100px;height:8px;overflow:hidden">
+        <div id="migracaoBar" style="background:var(--rosa);height:100%;width:0%;transition:width .3s;border-radius:100px"></div>
+      </div>
+      <div id="migracaoStatus" style="font-size:.78rem;color:var(--cinza);margin-top:6px;text-align:center"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="migracaoStartBtn" onclick="iniciarMigracao()" style="flex:1;background:var(--rosa);color:#fff;border:none;border-radius:10px;padding:12px;font-size:.88rem;font-weight:600;cursor:pointer">
+        Iniciar migração
+      </button>
+      <button onclick="fecharMigracao()" style="padding:12px 20px;border:1px solid var(--borda);border-radius:10px;background:#fff;cursor:pointer;font-size:.88rem">
+        Fechar
+      </button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
