@@ -658,24 +658,63 @@ async function removePhoto() {
   } catch(e) { showToast('Erro: '+e.message); }
 }
 
+// ── COMPACTAR E RENOMEAR FOTO ────────────────────────────────────
+function toSlug(str){
+  return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+}
+
+async function compressImage(file, maxWidth=1200, quality=0.85){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if(w > maxWidth){ h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality);
+    };
+    img.src = url;
+  });
+}
+
 async function uploadPhotos(files) {
   if (!files.length || !detailId) return;
   const prog = document.getElementById('uploadProgress');
   prog.style.display = 'block';
   let done = 0;
+
+  // Get product name for slug
+  const prod = products.find(p=>p.id===detailId);
+  const slug = prod ? toSlug(prod.name) : String(detailId);
+  const existingCount = (fotosMap[detailId]||[]).length;
+
   for (const file of Array.from(files)) {
-    prog.textContent = `Enviando ${done+1} de ${files.length}...`;
+    prog.textContent = `Compactando e enviando ${done+1} de ${files.length}...`;
     try {
-      const ext = file.name.split('.').pop().toLowerCase() || 'jpg';
-      const path = `${detailId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      await sb.storage.from('Fotos').upload(path, file, {upsert:false});
-      const {data:{publicUrl}} = sb.storage.from('Fotos').getPublicUrl(path);
-      const ordem = (fotosMap[detailId]||[]).length;
-      const {data:fRow} = await sb.from('fotos').insert({produto_id:detailId, url:publicUrl, ordem}).select().single();
+      // Compress
+      const blob = await compressImage(file);
+      // Name: slug + index (if more than one)
+      const idx = existingCount + done;
+      const filename = idx === 0 ? `${slug}.jpg` : `${slug}-${idx+1}.jpg`;
+      // Upload
+      const {error: upErr} = await sb.storage.from('Fotos').upload(filename, blob, {
+        contentType:'image/jpeg', upsert:true
+      });
+      if(upErr) throw upErr;
+      const {data:{publicUrl}} = sb.storage.from('Fotos').getPublicUrl(filename);
+      const ordem = idx;
+      const {data:fRow, error:dbErr} = await sb.from('fotos').insert({
+        produto_id:detailId, url:publicUrl, ordem
+      }).select().single();
+      if(dbErr) throw dbErr;
       if (!fotosMap[detailId]) fotosMap[detailId] = [];
       fotosMap[detailId].push(fRow);
       done++;
-    } catch(e) { showToast('Erro: '+e.message); }
+    } catch(e) { showToast('Erro: '+e.message); console.error(e); }
   }
   prog.textContent = `✓ ${done} foto${done!==1?'s':''} adicionada${done!==1?'s':''}!`;
   setTimeout(()=>prog.style.display='none', 2000);
