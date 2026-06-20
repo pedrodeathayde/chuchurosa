@@ -439,7 +439,7 @@ function applyFilters() {
   }
 
   if (activeCollection !== 'all') list = list.filter(p => p.collections && p.collections.includes(activeCollection));
-  if (q) list = list.filter(p => p.name.toLowerCase().includes(q));
+  if (q) list = list.filter(p => fuzzyMatch(p.name,q));
   if (activeFilters.semFoto) list = list.filter(p => !(fotosMap[p.id]||[]).length);
   if (activeFilters.naLoja) list = list.filter(p => p.visivel_na_loja);
 
@@ -876,6 +876,50 @@ async function iniciarMigracao(){
 }
 
 
+
+// ── BUSCA TOLERANTE (sem acento, sem case, tolera erro de digitação) ──
+function normalizeSearch(str){
+  return (str||'')
+    .toString()
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9\s]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function levenshtein(a,b){
+  if(a===b)return 0;
+  const al=a.length, bl=b.length;
+  if(al===0)return bl;
+  if(bl===0)return al;
+  let prev=Array.from({length:bl+1},(_,i)=>i);
+  for(let i=1;i<=al;i++){
+    const cur=[i];
+    for(let j=1;j<=bl;j++){
+      cur[j]=a[i-1]===b[j-1]
+        ? prev[j-1]
+        : Math.min(prev[j-1]+1, prev[j]+1, cur[j-1]+1);
+    }
+    prev=cur;
+  }
+  return prev[bl];
+}
+function fuzzyMatch(text, query){
+  const t=normalizeSearch(text);
+  const q=normalizeSearch(query);
+  if(!q)return true;
+  if(t.includes(q))return true;
+  const qWords=q.split(' ').filter(Boolean);
+  const tWords=t.split(' ').filter(Boolean);
+  return qWords.every(qw=>{
+    if(tWords.some(tw=>tw.includes(qw)))return true;
+    const maxDist = qw.length<=4 ? 1 : qw.length<=8 ? 2 : 3;
+    return tWords.some(tw=>{
+      if(Math.abs(tw.length-qw.length)>maxDist)return false;
+      return levenshtein(tw,qw)<=maxDist;
+    });
+  });
+}
 </script>
 
 <!-- MIGRATION MODAL -->
