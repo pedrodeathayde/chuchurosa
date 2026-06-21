@@ -326,16 +326,14 @@ let activeFilters = { semFoto: false, naLoja: false, arquivados: false };
 
 async function init() {
   // Load products
-  const {data: prodsData} = await sb.from('produtos').select('*').order('name');
+  const {data: prodsData, error: prodsErr} = await sb.from('produtos').select('*').order('name');
+  if (prodsErr) {
+    showToast('Erro ao carregar produtos: ' + prodsErr.message);
+    return;
+  }
   products = prodsData || [];
   if (!products.length) {
-    showToast('Importando produtos...');
-    for (let i = 0; i < RAW.length; i += 50) {
-      await sb.from('produtos').insert(RAW.slice(i,i+50).map(([name,price,collections])=>({name,price,collections})));
-    }
-    const r = await sb.from('produtos').select('*').order('name');
-    products = r.data || [];
-    showToast('✓ ' + products.length + ' produtos importados!');
+    showToast('Nenhum produto encontrado. Import automático desativado por segurança — confirme manualmente antes de importar RAW.');
   }
   // Load ALL fotos in batches
   let allFotos = [], offset = 0;
@@ -913,7 +911,7 @@ function fuzzyMatch(text, query){
   const tWords=t.split(' ').filter(Boolean);
   return qWords.every(qw=>{
     if(tWords.some(tw=>tw.includes(qw)))return true;
-    const maxDist = qw.length<=4 ? 1 : qw.length<=8 ? 2 : 3;
+    const maxDist = qw.length<=6 ? 1 : qw.length<=10 ? 2 : 3;
     return tWords.some(tw=>{
       if(Math.abs(tw.length-qw.length)>maxDist)return false;
       return levenshtein(tw,qw)<=maxDist;
